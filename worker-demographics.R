@@ -7,19 +7,19 @@ library(openxlsx)
 library(tidyr)
 
 # references --------------------------------------------------------
-dyear <- 2020 # This is the parameter to change for each data year
-dollar_refyear <- 2020 # This should be kept static to compare income across years; reflected in PINCP variables below
+dyear <- 2021 # This is the parameter to change for each data year
+dollar_refyear <- 2021 # This should be kept static to compare income across years; reflected in PINCP variables below
 pums_vars <- c("PRACE","ED_ATTAIN","COW","PINCP","MI_JOBSECTOR")
 
 
 # helper functions --------------------------------------------------
 
 recode_vars <- function(data){
-  data %<>% mutate(PINCP20_BIN:=factor(case_when(PINCP20 <  25000 ~"Under $25,000",                    # Custom income bins
-                                                 PINCP20 <  50000 ~"$25,000-$49,999",
-                                                 PINCP20 <  75000 ~"$50,000-$74,999",
-                                                 PINCP20 < 100000 ~"$75,000-$99,999",
-                                                 PINCP20 >=100000 ~"$100,000 or more",
+  data %<>% mutate(PINCP2021_BIN:=factor(case_when(PINCP2021 <  25000 ~"Under $25,000",                    # Custom income bins
+                                                 PINCP2021 <  50000 ~"$25,000-$49,999",
+                                                 PINCP2021 <  75000 ~"$50,000-$74,999",
+                                                 PINCP2021 < 100000 ~"$75,000-$99,999",
+                                                 PINCP2021 >=100000 ~"$100,000 or more",
                                                  !is.na(PINCP)  ~"Else / Prefer not to answer"),
                                        levels=c("Under $25,000",
                                                 "$25,000-$49,999",
@@ -49,9 +49,9 @@ combined_median <- function(data, targetvar){
 xtabber <- function(data, stat_wanted){
   wanteds <- paste0(stat_wanted, c("","_moe"))                                                     # i.e. count or median
   key_var <- if(!grepl("_median", stat_wanted)){
-    grep("^PRACE$|^ED_ATTAIN$|^PINCP_BIN$", colnames(data), value=TRUE)
+    grep("^PRACE$|^ED_ATTAIN$|^PINCP2021_BIN$", colnames(data), value=TRUE)
   }else{NULL}
-  measure_vars <- grep(paste0(c("count","share","PINCP_median"), rep(c("","_moe"),3),collapse="$|^"), 
+  measure_vars <- grep(paste0(c("count","share","PINCP2021_median"), rep(c("","_moe"),3),collapse="$|^"), 
                        colnames(data), value=TRUE)
   rt <- NULL
   rt <- data %>% select(!DATA_YEAR) %>% pivot_longer(cols=all_of(measure_vars), names_to="var_name") # Long format to prep for xtab
@@ -78,24 +78,24 @@ xtabber <- function(data, stat_wanted){
 
 # main script -------------------------------------------------------
 
-pums_data <- get_psrc_pums(5, dyear, "p", pums_vars) %>% real_dollars(refyear)                     # Obtain the data
-pums_data %<>% filter((!grepl("^Unemployed", COW) & !is.na(COW)))                                  # Filter to workers; add custom fields
+pums_data <- get_psrc_pums(5, dyear, "p", pums_vars) %>% real_dollars(dollar_refyear)              # Obtain the data
+pums_data %<>% filter((!grepl("^Unemployed", COW) & !is.na(COW))) %>% recode_vars()                # Filter to workers; add custom fields
 
 deep_pocket <- list()                                                                              # Calculate estimates; counts & shares both included
 deep_pocket[[1]] <- combined_counts(pums_data, "PRACE")
 deep_pocket[[2]] <- combined_counts(pums_data, "ED_ATTAIN")
-deep_pocket[[3]] <- combined_counts(pums_data, "PINCP_BIN")
+deep_pocket[[3]] <- combined_counts(pums_data, "PINCP2021_BIN")
 deep_pocket[[4]] <- psrc_pums_count(pums_data, group_vars=c("MI_JOBSECTOR","PRACE"), incl_na=FALSE)
 deep_pocket[[5]] <- psrc_pums_count(pums_data, group_vars=c("MI_JOBSECTOR","ED_ATTAIN"), incl_na=FALSE)
-deep_pocket[[6]] <- psrc_pums_count(pums_data, group_vars=c("MI_JOBSECTOR","PINCP20_BIN"), incl_na=FALSE)
-deep_pocket[[7]] <- combined_median(pums_data, "PINCP20")
-deep_pocket[[8]] <- psrc_pums_median(pums_data, "PINCP20", group_vars="MI_JOBSECTOR", incl_na=FALSE)
+deep_pocket[[6]] <- psrc_pums_count(pums_data, group_vars=c("MI_JOBSECTOR","PINCP2021_BIN"), incl_na=FALSE)
+deep_pocket[[7]] <- combined_median(pums_data, "PINCP2021")
+deep_pocket[[8]] <- psrc_pums_median(pums_data, "PINCP2021", group_vars="MI_JOBSECTOR", incl_na=FALSE)
 
 xtab_pocket <- list()                                                                              # Counts & shares in separate xtabs
 xtab_pocket[1:3]   <- mapply(xtabber, deep_pocket[1:3], "share", SIMPLIFY=FALSE)
 xtab_pocket[4:6]   <- mapply(xtabber, deep_pocket[1:3], "count", SIMPLIFY=FALSE)
 xtab_pocket[7:9]   <- mapply(xtabber, deep_pocket[4:6], "share", SIMPLIFY=FALSE)
 xtab_pocket[10:12] <- mapply(xtabber, deep_pocket[4:6], "count", SIMPLIFY=FALSE)
-xtab_pocket[13:14] <- mapply(xtabber, deep_pocket[7:8], "PINCP20_median", SIMPLIFY=FALSE)
+xtab_pocket[13:14] <- mapply(xtabber, deep_pocket[7:8], "PINCP2021_median", SIMPLIFY=FALSE)
 names(xtab_pocket) <- paste0("Sheet",1:length(xtab_pocket))                       
 write.xlsx(xtab_pocket, file = paste0("IndLa_worker_demographics_", dyear,".xlsx"))                # Output saved to multi-sheet file in working directory
