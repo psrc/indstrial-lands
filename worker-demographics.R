@@ -7,7 +7,7 @@ library(openxlsx)
 library(tidyr)
 
 # references --------------------------------------------------------
-dyear <- 2021 # This is the parameter to change for each data year
+dyear <- 2011 # This is the parameter to change for each data year
 dollar_refyear <- 2021 # This should be kept static to compare income across years; reflected in PINCP variables below
 pums_vars <- c("PRACE","ED_ATTAIN","COW","PINCP","MI_JOBSECTOR")
 
