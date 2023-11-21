@@ -13,10 +13,23 @@
     SELECT p.parcel_id, p.parcel_sqft, p.gross_sqft, p.land_value, 0.00 AS combined_improvement_value, 'v' AS flag, p.land_use_type_id, p.plan_type_id, round(p.x_coord_sp,2), round(p.y_coord_sp,2)
     FROM 2018_parcel_baseyear.parcels AS p WHERE NOT EXISTS (SELECT 1 FROM 2018_parcel_baseyear.buildings AS b WHERE b.parcel_id=p.parcel_id);
 
+    -- Remove duplicates (they exist in the parcel baseyear)
+    CREATE TEMPORARY TABLE tmp_prcl_duplicate_finder AS (SELECT p.gross_sqft, round(p.x_coord_sp,0) AS x, round(p.y_coord_sp,0) AS y, min(p.parcel_id) AS minid
+    FROM 2018_parcel_baseyear.parcels AS p 
+    GROUP BY p.gross_sqft, round(p.x_coord_sp,0), round(p.y_coord_sp,0) 
+    HAVING count(*) >1);
+
+    DELETE prclbldg_values
+    FROM prclbldg_values JOIN tmp_prcl_duplicate_finder AS f 
+        ON prclbldg_values.gross_sqft=f.gross_sqft 
+        AND round(prclbldg_values.x_coord_sp,0)=f.x
+        AND round(prclbldg_values.y_coord_sp,0)=f.y
+    WHERE prclbldg_values.parcel_id<>f.minid;
+
+    --export from MySQL; then import into Sockeye (e.g. flat file import tool)
     SELECT * FROM sandbox_mjj.prclbldg_values
     INTO OUTFILE 'by18_prcl_bldg.csv';
     */
-    -- import into Sockeye (e.g. flat file import tool).
 
 /* Step 2. Generate correct correspondence between ElmerGeo.dbo.parcels_urbansim_2018 and baseyear parcel_id */
     -- This doesn't need to be done again, but was a major item in 2023; ElmerGeo.dbo.parcels_urbansim_2018.PIN had been erroneously assigned, along with coordinates, to many parcels
@@ -66,6 +79,12 @@
     USING GEOMETRY_AUTO_GRID WITH (BOUNDING_BOX = (xmin = 1111000, ymin = -92400, xmax = 1520420, ymax = 476385));
     GO
 
+    -- Remove any duplicate parcels (they exist in the baseyear!)
+    WITH cte AS (SELECT min(p.parcel_id) AS keep, gross_sqft, 
+FROM 2018_parcel_baseyear.parcels AS p 
+GROUP BY p.gross_sqft, round(p.x_coord_sp,0), round(p.y_coord_sp,0) 
+HAVING count(*) >1
+        
     --Spatial join with the 2023 Industrial Lands Inventory
     UPDATE x
     SET x.ind_type=i.ind_type 
