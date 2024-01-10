@@ -2,14 +2,18 @@
 
 --2023 Inventory
 
+    UPDATE Sandbox.Mike.ili20231221_net
+    SET Shape = Shape.MakeValid();
+    GO
+
     WITH cte AS(SELECT c.county_nm, i.ind_type, round(sum(c.Shape.STDifference(w.Shape).STIntersection(i.Shape).STArea())/43560,2) AS acres
-                FROM ElmerGeo.dbo.COUNTY_BACKGROUND AS c JOIN Sandbox.Mike.ili20231023 AS i ON 1=1  LEFT JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
+                FROM ElmerGeo.dbo.COUNTY_BACKGROUND AS c JOIN Sandbox.Mike.ili20231221 AS i ON 1=1  LEFT JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
                 WHERE c.county_fip IN('033','035','053','061')
                 GROUP BY c.county_nm, i.ind_type)
     SELECT * FROM cte PIVOT (max(acres) FOR ind_type IN([Core Industrial], [Industrial-Commercial], [Aviation Operations], [Military Industrial], [Limited Industrial])) AS p;
 
-    WITH cte AS(SELECT CASE WHEN i.ind_type IS NOT NULL THEN i.ind_type ELSE 'Else' END AS ind_type, m.mic, round(sum(m.Shape.STDifference(w.Shape).STIntersection(i.Shape).STArea())/43560,2) AS acres
-                FROM ElmerGeo.dbo.MICEN AS m LEFT JOIN Sandbox.Mike.ili20231023 AS i ON 1=1 LEFT JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
+    WITH cte AS(SELECT CASE WHEN i.ind_type IS NOT NULL THEN i.ind_type ELSE 'Non-Industrial' END AS ind_type, m.mic, round(sum(m.Shape.STDifference(w.Shape).STIntersection(i.Shape).STArea())/43560,2) AS acres
+                FROM ElmerGeo.dbo.MICEN AS m LEFT JOIN Sandbox.Mike.ili20231221 AS i ON 1=1 LEFT JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
                 WHERE m.mic IS NOT NULL
                 GROUP BY CASE WHEN i.ind_type IS NOT NULL THEN i.ind_type ELSE 'Non-Industrial' END, m.mic)
     SELECT * FROM cte PIVOT (max(acres) FOR ind_type IN([Core Industrial], [Industrial-Commercial], [Aviation Operations], [Military Industrial], [Limited Industrial], [Non-Industrial])) AS p;
