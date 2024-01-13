@@ -55,24 +55,20 @@
     --Faster than using OGC queries to intersect such detailed geometry
     --import via ogr2ogr into Sockeye
 
-/* Step 4. Create primary table with necessary fields */
     UPDATE Sandbox.Mike.prcl18_netx
     SET Shape = Shape.MakeValid();
     GO
 
-    DROP TABLE IF EXISTS Sandbox.Mike.ilx_indprcl_all;
-    --import via ogr2ogr into Sockeye as prcl_xcluderase
-
 /* Step 4. Create primary table with necessary fields */
     -- Faster to import all parcels, spatially update, and then drop those which don't match, than to selectively insert those which do match (go figure)
-    DROP TABLE IF EXISTS Sandbox.Mike.ilx_indprcl_net;
+    DROP TABLE IF EXISTS Sandbox.Mike.ilx_indprcl_all;
     GO
     CREATE TABLE Sandbox.Mike.ilx_indprcl_all(parcel_id int PRIMARY KEY NOT NULL, 
                                               ind_type nvarchar(25), 
                                               county_id smallint, 
                                               mic nvarchar(40), 
-                                              impval int, 
-                                              gross_sqft int, 
+                                              impval decimal(18,2), 
+                                              gross_sqft decimal(18,2),  
                                               land_use_type_id smallint,
                                               net_flag nchar(1), 
                                               value_ratio decimal(11,2),
@@ -81,74 +77,87 @@
                                               CentroidShape geometry);
     GO 
     INSERT INTO Sandbox.Mike.ilx_indprcl_all(parcel_id, Shape, CentroidShape)
-    SELECT p.OBJECTID AS parcel_id, p.Shape, p.Shape.STPointOnSurface()
-    FROM ElmerGeo.dbo.PARCELS_URBANSIM_2018 AS p;
+    SELECT p.parcel_id AS parcel_id, p.Shape, p.Shape.STPointOnSurface() AS CentroidShape
+    FROM ElmerGeo.dbo.PARCELS_URBANSIM_2018 AS p WHERE EXISTS (SELECT 1 FROM Mike.prcl18_netx AS x WHERE x.parcel_id=p.parcel_id);
     GO
     CREATE SPATIAL INDEX ilxs_all_ind_parcels ON Sandbox.Mike.ilx_indprcl_all(CentroidShape)
     USING GEOMETRY_AUTO_GRID WITH (BOUNDING_BOX = (xmin = 1111000, ymin = -92400, xmax = 1520420, ymax = 476385));
-    GO;
+    GO
 
     --Spatial join with the 2023 Industrial Lands Inventory
     UPDATE x
-    SET x.ind_type=i.ind_type 
+    SET x.ind_type=CASE WHEN i.ind_type IS NULL OR i.ind_type IN('Aviation Operations','Military Industrial','Limited Industrial') THEN '' ELSE i.ind_type END
     FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.ili20231221 AS i ON x.CentroidShape.STIntersects(i.Shape)=1
-    WHERE i.ind_type NOT IN('Aviation Operations','Military Industrial','Limited Industrial');
+    WHERE x.ind_type IS NULL;
     GO
-    DELETE FROM Sandbox.Mike.ilx_indprcl_all WHERE ind_type IS NULL OR net_flag <>'';
+    DELETE FROM Sandbox.Mike.ilx_indprcl_all WHERE ind_type IS NULL;
     GO
- 
+
   -- Add key fields and stored geographic labels
     UPDATE x
     SET x.impval=i.improvements_value,
-        x.gross_sqft=i.gross_sqft,
+        x.gross_sqft=x.Shape.STArea(),
         x.land_use_type_id=i.land_use_type_id
-    FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.by18_prcl_bldg AS i ON i.Shape.STIntersects(x.Shape)=1;
+    FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.by18_no_bldg AS i ON i.parcel_id=x.parcel_id;
+
+    UPDATE x
+    SET x.impval=i.improvements_value,
+        x.gross_sqft=x.Shape.STArea(),
+        x.land_use_type_id=i.land_use_type_id
+    FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.by18_prcl_bldg AS i ON i.parcel_id=x.parcel_id;
+
+    UPDATE x 
+    SET x.value_ratio=CASE WHEN gross_sqft > 0 THEN x.impval/x.gross_sqft ELSE 0 END 
+    FROM Sandbox.Mike.ilx_indprcl_all AS x;
+
+    --Add vacant and redevelopment flags
+    UPDATE Sandbox.Mike.ilx_indprcl_all
+    SET net_flag='v' WHERE impval IS NULL OR impval < 0.01 AND net_flag IS NULL;
+    GO
+    UPDATE Sandbox.Mike.ilx_indprcl_all
+    SET net_flag='v' WHERE impval/gross_sqft < 0.01 AND gross_sqft<>0 AND net_flag IS NULL;    
+    GO
+    UPDATE Sandbox.Mike.ilx_indprcl_all
+    SET net_flag='r' WHERE impval/gross_sqft < 5.35 AND gross_sqft<>0 AND net_flag IS NULL;        
+    GO
 
     --Attach geographic assignments
     UPDATE x 
     SET x.county_id=CAST(county_fip AS smallint)
-    FROM Sandbox.Mike.ilx_indprcl_net AS x JOIN ElmerGeo.dbo.COUNTY_BACKGROUND AS c ON x.CentroidShape.STIntersects(c.Shape)=1
+    FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN ElmerGeo.dbo.COUNTY_BACKGROUND AS c ON x.CentroidShape.STIntersects(c.Shape)=1
     WHERE c.county_fip IN('033','035','053','061');
     GO
     UPDATE x 
     SET x.mic=m.mic
-    FROM Sandbox.Mike.ilx_indprcl_net AS x JOIN ElmerGeo.dbo.MICEN AS m ON x.CentroidShape.STIntersects(m.Shape)=1;    
+    FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN ElmerGeo.dbo.MICEN AS m ON x.CentroidShape.STIntersects(m.Shape)=1;    
     GO
     UPDATE x 
     SET x.urban=CASE WHEN r.class_desc='Metro' AND r.Juris<>'Bremerton' THEN 'Y' ELSE 'N' END
     FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN ElmerGeo.dbo.PSRC_REGION AS r ON x.CentroidShape.STIntersects(r.Shape)=1;    
     GO  
-    
-   --Add vacant and redevelopment flags
-    UPDATE Sandbox.Mike.ilx_indprcl_all
-    SET net_flag='v' WHERE impval IS NULL OR impval < 0.01 AND net_flag IS NULL;
 
-    UPDATE Sandbox.Mike.ilx_indprcl_all
-    SET net_flag='v' WHERE impval/gross_sqft < 0.01 AND gross_sqft<>0 AND net_flag IS NULL;    
-    
-    UPDATE Sandbox.Mike.ilx_indprcl_all
-    SET net_flag='r' WHERE impval/gross_sqft < 5.35 AND gross_sqft<>0 AND net_flag IS NULL;        
-    GO
-    
+--QC
+SELECT count(*) FROM Sandbox.Mike.ilx_indprcl_all AS a WHERE NOT EXISTS (SELECT 1 FROM Mike.by18_no_bldg AS b WHERE a.parcel_id=b.parcel_id)
+ AND NOT EXISTS  (SELECT 1 FROM Mike.by18_prcl_bldg AS p WHERE a.parcel_id=p.parcel_id)
 /* Step 5. 2023 net supply queries */
 
     --Replicates 2015 method of market factor and ROI set-asides through a multiplier
 
     WITH cte AS (SELECT x.mic, x.net_flag, round(sum(p.Shape.STDifference(w.Shape).STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
-                FROM Sandbox.Mike.ilx_indprcl_net AS x JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
-                WHERE x.mic<>'' AND x.ind_type<>'Limited Industrial' AND x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29)
+                FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
+                WHERE x.mic<>'' AND x.ind_type<>'Limited Industrial' AND x.land_use_type_id NOT IN(2,7,8,19,22,23,29) --6,
                 GROUP BY x.net_flag, x.mic)
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([v], [r])) AS pv;
 
     WITH cte AS (SELECT x.county_id, x.net_flag, round(sum(p.Shape.STDifference(w.Shape).STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
-                FROM Sandbox.Mike.ilx_indprcl_net AS x JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
-                WHERE x.ind_type<>'Limited Industrial' AND x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29)
+                FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
+                WHERE x.ind_type<>'Limited Industrial' AND ((x.mic<>'' AND x.land_use_type_id=6) OR x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29))
                 GROUP BY x.net_flag, x.county_id) 
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([v], [r])) AS pv;
 
     WITH cte AS (SELECT x.ind_type, x.net_flag, round(sum(p.Shape.STDifference(w.Shape).STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
-                FROM Sandbox.Mike.ilx_indprcl_net AS x  JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
-                WHERE x.ind_type<>'Limited Industrial' AND x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29)     
+                FROM Sandbox.Mike.ilx_indprcl_all AS x  JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
+                WHERE x.ind_type<>'Limited Industrial' AND ((x.mic<>'' AND x.land_use_type_id=6) OR x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29))   
                 GROUP BY x.net_flag, x.ind_type)
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([v], [r])) AS pv;
 
@@ -166,7 +175,7 @@
 
     WITH cte AS(SELECT i.net_flag, m.mic, 
                 round(sum(m.Shape.STIntersection(i.Shape).STArea())/43560 * .87,2) AS acres
-                FROM ElmerGeo.dbo.MICEN AS m LEFT JOIN Sandbox.Mike.ili_2013_net AS i ON 1=1
+                FROM ElmerGeo.dbo.MICEN AS m LEFT JOIN Sandbox.Mike.ili_2013_net AS i ON 1=1 JOIN Sandbox.Mike.ili_2013_net_exclude AS e ON 1=1
                 GROUP BY i.net_flag, m.mic)
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([vacant], [redevelopable])) AS p;
 
@@ -189,9 +198,8 @@
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([vacant], [redevelopable])) AS p;
 
     WITH cte AS(SELECT i.net_flag, m.mic, 
-                round(sum(m.Shape.STIntersection(i.Shape).STArea())/43560 * .88,2) AS acres
-                FROM ElmerGeo.dbo.MICEN AS m LEFT JOIN Sandbox.Mike.ili_2013_net AS i ON 1=1
+                round(sum(m.Shape.STIntersection(i.Shape).STDifference(w.Shape).STArea())/43560 * .88,2) AS acres
+                FROM ElmerGeo.dbo.MICEN AS m LEFT JOIN Sandbox.Mike.ili_2013_net AS i ON 1=1 LEFT JOIN ElmerGeo.dbo.LARGEST_WATERBODIES as w ON 1=1
                 GROUP BY i.net_flag, m.mic)
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([vacant], [redevelopable])) AS p;
     */
-
