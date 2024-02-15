@@ -34,8 +34,10 @@
                 GROUP BY i.segment, c.county_nm)
     SELECT * FROM cte PIVOT (max(acres) FOR segment IN([Core Industrial], [Industrial-Commercial], [Aviation Operations], [Military])) AS p;
 
-    WITH cte AS(SELECT CASE WHEN i.segment IS NOT NULL THEN i.segment ELSE 'Else' END as segment, m.mic, round(sum(m.Shape.STDifference(w.Shape).STIntersection(i.Shape).STArea())/43560,2) AS acres
+    WITH cte AS(SELECT CASE WHEN i.segment IS NOT NULL THEN i.segment ELSE 'Non-Industrial' END as segment, m.mic, round(sum(m.Shape.STDifference(w.Shape).STIntersection(i.Shape).STArea())/43560,2) AS acres
                 FROM ElmerGeo.dbo.MICEN AS m LEFT JOIN Sandbox.Mike.ili_2015 AS i ON 1=1 JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
                 WHERE m.mic IS NOT NULL
                 GROUP BY CASE WHEN i.segment IS NOT NULL THEN i.segment ELSE 'Non-Industrial'  END, m.mic)
     SELECT * FROM cte PIVOT (max(acres) FOR segment IN([Core Industrial], [Industrial-Commercial], [Aviation Operations], [Military], [Non-Industrial])) AS p;
+
+    SELECT m.mic, round(sum(m.Shape.STArea())/43560,2) FROM ElmerGeo.dbo.MICEN AS m GROUP BY m.mic

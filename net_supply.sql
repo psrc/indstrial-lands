@@ -90,7 +90,7 @@
     FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.ili20231221 AS i ON x.CentroidShape.STIntersects(i.Shape)=1
     WHERE x.ind_type IS NULL;
     GO
-    DELETE FROM Sandbox.Mike.ilx_indprcl_all WHERE ind_type IS NULL;
+    DELETE FROM Sandbox.Mike.ilx_indprcl_all WHERE ind_type='';
     GO
 
   -- Add key fields and stored geographic labels
@@ -145,19 +145,19 @@ SELECT count(*) FROM Sandbox.Mike.ilx_indprcl_all AS a WHERE NOT EXISTS (SELECT 
 
     WITH cte AS (SELECT x.mic, x.net_flag, round(sum(p.Shape.STDifference(w.Shape).STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
                 FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
-                WHERE x.mic<>'' AND x.ind_type<>'Limited Industrial' AND x.land_use_type_id NOT IN(2,7,8,19,22,23,29) --6,
+                WHERE x.mic<>'' AND x.land_use_type_id NOT IN(2,7,8,19,22,23,29)
                 GROUP BY x.net_flag, x.mic)
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([v], [r])) AS pv;
 
     WITH cte AS (SELECT x.county_id, x.net_flag, round(sum(p.Shape.STDifference(w.Shape).STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
                 FROM Sandbox.Mike.ilx_indprcl_all AS x JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
-                WHERE x.ind_type<>'Limited Industrial' AND ((x.mic<>'' AND x.land_use_type_id=6) OR x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29))
+                WHERE ((x.mic<>'' AND x.land_use_type_id=6) OR x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29)) 
                 GROUP BY x.net_flag, x.county_id) 
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([v], [r])) AS pv;
 
-    WITH cte AS (SELECT x.ind_type, x.net_flag, round(sum(p.Shape.STDifference(w.Shape).STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
+        WITH cte AS (SELECT x.ind_type, x.net_flag, round(sum(p.Shape.STDifference(w.Shape).STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
                 FROM Sandbox.Mike.ilx_indprcl_all AS x  JOIN Sandbox.Mike.prcl18_netx AS p ON x.parcel_id=p.parcel_id JOIN ElmerGeo.dbo.LARGEST_WATERBODIES AS w ON 1=1
-                WHERE x.ind_type<>'Limited Industrial' AND ((x.mic<>'' AND x.land_use_type_id=6) OR x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29))   
+                WHERE ((x.mic<>'' AND x.land_use_type_id=6) OR x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29))  
                 GROUP BY x.net_flag, x.ind_type)
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([v], [r])) AS pv;
 
@@ -203,3 +203,4 @@ SELECT count(*) FROM Sandbox.Mike.ilx_indprcl_all AS a WHERE NOT EXISTS (SELECT 
                 GROUP BY i.net_flag, m.mic)
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([vacant], [redevelopable])) AS p;
     */
+SELECT * INTO Mike.tmp_no_indtype FROM Mike.ilx_indprcl_all WHERE ind_type NOT IN('Core Industrial','Industrial-Commercial')
