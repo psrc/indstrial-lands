@@ -139,6 +139,7 @@
 --QC
 SELECT count(*) FROM Sandbox.Mike.ilx_indprcl_all AS a WHERE NOT EXISTS (SELECT 1 FROM Mike.by18_no_bldg AS b WHERE a.parcel_id=b.parcel_id)
  AND NOT EXISTS  (SELECT 1 FROM Mike.by18_prcl_bldg AS p WHERE a.parcel_id=p.parcel_id)
+ 
 /* Step 5. 2023 net supply queries */
 
     --Replicates 2015 method of market factor and ROI set-asides through a multiplier
@@ -203,4 +204,3 @@ SELECT count(*) FROM Sandbox.Mike.ilx_indprcl_all AS a WHERE NOT EXISTS (SELECT 
                 GROUP BY i.net_flag, m.mic)
     SELECT * FROM cte PIVOT (max(acres) FOR net_flag IN([vacant], [redevelopable])) AS p;
     */
-SELECT * INTO Mike.tmp_no_indtype FROM Mike.ilx_indprcl_all WHERE ind_type NOT IN('Core Industrial','Industrial-Commercial')
