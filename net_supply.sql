@@ -81,13 +81,13 @@
 
     --Add vacant and redevelopment flags
     UPDATE Sandbox.Mike.ilx_indprcl23
-    SET flag='v' WHERE impval IS NULL OR impval < 0.01 AND flag IS NULL;
+    SET flag='v' WHERE impval IS NULL OR impval < 0.01257 AND flag IS NULL;
     GO
     UPDATE Sandbox.Mike.ilx_indprcl23
-    SET flag='v' WHERE impval/gross_sqft < 0.01 AND gross_sqft<>0 AND flag IS NULL;    
+    SET flag='v' WHERE impval/gross_sqft < 0.01257 AND gross_sqft<>0 AND flag IS NULL;    
     GO
     UPDATE Sandbox.Mike.ilx_indprcl23
-    SET flag='r' WHERE impval/gross_sqft < 5.35 AND gross_sqft<>0 AND flag IS NULL;        
+    SET flag='r' WHERE impval/gross_sqft < 6.28 AND gross_sqft<>0 AND flag IS NULL;        
     GO
 
     --Attach geographic assignments
@@ -124,7 +124,7 @@ SELECT count(*) FROM Sandbox.Mike.ilx_indprcl23 AS a WHERE NOT EXISTS (SELECT 1 
                 GROUP BY x.flag, x.county_id) 
     SELECT * FROM cte PIVOT (max(acres) FOR flag IN([v], [r])) AS pv;
 
-        WITH cte AS (SELECT x.ind_type, x.flag, round(sum(p.Shape.STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
+    WITH cte AS (SELECT x.ind_type, x.flag, round(sum(p.Shape.STArea() * (CASE WHEN x.urban='Y' THEN .88 ELSE .85 END))/43560,2) AS acres 
                 FROM Sandbox.Mike.ilx_indprcl23 AS x JOIN Sandbox.Mike.prcl23_netx AS p ON x.fiprcl_id=p.fiprcl_id
                 WHERE ((x.mic<>'' AND x.land_use_type_id=6) OR x.land_use_type_id NOT IN(2,6,7,8,19,22,23,29)) AND x.flag IN('v', 'r')
                 GROUP BY x.flag, x.ind_type)
